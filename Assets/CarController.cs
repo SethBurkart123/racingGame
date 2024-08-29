@@ -77,11 +77,14 @@ public class HighPerformanceRacingCarController : MonoBehaviour
     {
         float currentSpeed = rb.velocity.magnitude * 3.6f; // Convert to km/h
         
-        // Drastically increased torque calculation
-        float motorTorque = enginePower * maxMotorTorque * accelerationInput * 
+        // Calculate motor torque, allowing for reverse
+        float motorTorque = enginePower * maxMotorTorque * Mathf.Abs(accelerationInput) * 
                             Mathf.Lerp(1f, 0.1f, currentSpeed / maxSpeed) * accelerationFactor;
         
-        ApplyTorqueToWheels(motorTorque);
+        // Determine direction (forward or reverse)
+        float direction = accelerationInput >= 0 ? 1 : -1;
+        
+        ApplyTorqueToWheels(motorTorque * direction);
 
         float steeringAngle = steeringInput * maxSteeringAngle;
         ApplySteering(steeringAngle);
@@ -89,8 +92,8 @@ public class HighPerformanceRacingCarController : MonoBehaviour
         // Apply drifting
         ApplyDrift(steeringInput, currentSpeed);
 
-        // Apply brakes
-        float brake = accelerationInput < 0 ? brakeTorque : 0f;
+        // Apply brakes when not accelerating
+        float brake = Mathf.Abs(accelerationInput) < 0.1f ? brakeTorque : 0f;
         ApplyBrakes(brake);
     }
 
