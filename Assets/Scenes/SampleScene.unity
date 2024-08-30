@@ -5861,7 +5861,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cfed66ca813f6401698faefd4754683b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  enginePower: 1000000
+  enginePower: 1000
   maxMotorTorque: 3000
   maxSteeringAngle: 30
   maxSpeed: 300
