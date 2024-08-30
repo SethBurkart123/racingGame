@@ -1,152 +1,99 @@
 using UnityEngine;
 
-public class HighPerformanceRacingCarController : MonoBehaviour
+public class RacinCarController : MonoBehaviour
 {
-    [Header("Car Specifications")]
-    public float enginePower = 1000000f; // Drastically increased
-    public float maxMotorTorque = 10000f; // Significantly increased
-    public float maxSteeringAngle = 40f; // Increased for sharper turns
-    public float maxSpeed = 400f; // Increased max speed (km/h)
-    public float accelerationFactor = 50f; // Drastically increased
-    public float brakeTorque = 50000f; // Increased for stronger brakes
-    public float driftFactor = 0.95f; // Add this line back
+    public WheelCollider WheelFL, WheelFR, WheelRL, WheelRR;
+    public Transform WheelFLtrans, WheelFRtrans, WheelRLtrans, WheelRRtrans;
+    public Vector3 eulertest;
+    public Transform centreofmass;
 
-    // Wheel Colliders
-    public WheelCollider frontLeftWheel;
-    public WheelCollider frontRightWheel;
-    public WheelCollider rearLeftWheel;
-    public WheelCollider rearRightWheel;
-
-    // Wheel Transforms
-    public Transform frontLeftTransform;
-    public Transform frontRightTransform;
-    public Transform rearLeftTransform;
-    public Transform rearRightTransform;
-
+    private bool braked = false;
+    private float maxBrakeTorque = 500;
     private Rigidbody rb;
+    [Header("Engine Settings")]
+    public float maxTorque = 2000f;
+    public float accelerationFactor = 5f;
+    [Range(0.1f, 1f)]
+    public float accelerationCurve = 0.5f;
 
-    [Header("Camera Settings")]
-    public Camera mainCamera;
-    public Vector3 cameraOffset = new Vector3(0, 3, -7);
+    [Header("Steering Settings")]
+    public float maxSteeringAngle = 30f;
+    public float minSteeringAngle = 10f;
+    [Range(0f, 1f)]
+    public float steeringReductionFactor = 0.7f;
 
-    private void Start()
+    private float currentSpeed;
+
+    void Start()
     {
         rb = GetComponent<Rigidbody>();
-        rb.mass = 1000f; // Reduced mass for faster acceleration
-        rb.drag = 0.01f; // Reduced drag for less air resistance
-        rb.angularDrag = 0.05f;
-        rb.centerOfMass = new Vector3(0, -0.5f, 0);
-
-        if (mainCamera == null)
-        {
-            mainCamera = Camera.main;
-        }
-        UpdateCamera();
-        ConfigureWheelColliders();
+        rb.centerOfMass = centreofmass.transform.localPosition;
     }
 
-    private void ConfigureWheelColliders()
+    void FixedUpdate()
     {
-        WheelCollider[] wheels = { frontLeftWheel, frontRightWheel, rearLeftWheel, rearRightWheel };
-        foreach (var wheel in wheels)
+        if (!braked)
         {
-            wheel.suspensionDistance = 0.1f; // Reduced for stiffer suspension
-            wheel.forceAppPointDistance = 0;
-            
-            WheelFrictionCurve fwdFriction = wheel.forwardFriction;
-            fwdFriction.stiffness = 4f; // Increased for better traction
-            wheel.forwardFriction = fwdFriction;
-
-            WheelFrictionCurve sideFriction = wheel.sidewaysFriction;
-            sideFriction.stiffness = 4f; // Increased for better cornering
-            wheel.sidewaysFriction = sideFriction;
+            WheelFL.brakeTorque = WheelFR.brakeTorque = WheelRL.brakeTorque = WheelRR.brakeTorque = 0;
         }
-    }
 
-    private void FixedUpdate()
-    {
+        // Speed of car with responsive acceleration
         float accelerationInput = Input.GetAxis("Vertical");
-        float steeringInput = Input.GetAxis("Horizontal");
+        float currentTorque = maxTorque * Mathf.Sign(accelerationInput) * Mathf.Pow(Mathf.Abs(accelerationInput), accelerationFactor);
+        currentTorque *= Mathf.Lerp(1f, Mathf.Abs(accelerationInput), accelerationCurve);
+        WheelRR.motorTorque = WheelRL.motorTorque = currentTorque;
 
-        HandleDriving(accelerationInput, steeringInput);
-        UpdateWheels();
-        UpdateCamera();
+        // Calculate current speed
+        currentSpeed = rb.velocity.magnitude;
+
+        // Calculate steering angle based on speed
+        float speedFactor = Mathf.Clamp01(currentSpeed / 100f); // Adjust 100f to change the speed at which steering reduction maxes out
+        float currentSteeringAngle = Mathf.Lerp(maxSteeringAngle, minSteeringAngle, speedFactor * steeringReductionFactor);
+
+        // Changing car direction with speed-based steering angle
+        WheelFL.steerAngle = WheelFR.steerAngle = currentSteeringAngle * Input.GetAxis("Horizontal");
+
+        // Changing car direction
+        WheelFL.steerAngle = WheelFR.steerAngle = 30 * Input.GetAxis("Horizontal");
     }
 
-    private void HandleDriving(float accelerationInput, float steeringInput)
+    void Update()
     {
-        float currentSpeed = rb.velocity.magnitude * 3.6f; // Convert to km/h
+        HandBrake();
         
-        // Drastically increased torque calculation
-        float motorTorque = enginePower * maxMotorTorque * accelerationInput * 
-                            Mathf.Lerp(1f, 0.1f, currentSpeed / maxSpeed) * accelerationFactor;
-        
-        ApplyTorqueToWheels(motorTorque);
+        // Rotate wheels
+        RotateWheel(WheelFLtrans, WheelFL.rpm);
+        RotateWheel(WheelFRtrans, WheelFR.rpm);
+        RotateWheel(WheelRLtrans, WheelRL.rpm);
+        RotateWheel(WheelRRtrans, WheelRR.rpm);
 
-        float steeringAngle = steeringInput * maxSteeringAngle;
-        ApplySteering(steeringAngle);
+        // Change front wheel direction
+        UpdateWheelDirection(WheelFLtrans, WheelFL.steerAngle);
+        UpdateWheelDirection(WheelFRtrans, WheelFR.steerAngle);
 
-        // Apply drifting
-        ApplyDrift(steeringInput, currentSpeed);
-
-        // Apply brakes
-        float brake = accelerationInput < 0 ? brakeTorque : 0f;
-        ApplyBrakes(brake);
+        eulertest = WheelFLtrans.localEulerAngles;
     }
 
-    private void ApplyTorqueToWheels(float motorTorque)
+    void HandBrake()
     {
-        // Apply more torque to rear wheels for a rear-wheel drive feel
-        rearLeftWheel.motorTorque = motorTorque * 0.7f;
-        rearRightWheel.motorTorque = motorTorque * 0.7f;
-        frontLeftWheel.motorTorque = motorTorque * 0.3f;
-        frontRightWheel.motorTorque = motorTorque * 0.3f;
-    }
+        braked = Input.GetButton("Jump");
 
-    private void ApplySteering(float steeringAngle)
-    {
-        frontLeftWheel.steerAngle = steeringAngle;
-        frontRightWheel.steerAngle = steeringAngle;
-    }
-
-    private void ApplyDrift(float steeringInput, float currentSpeed)
-    {
-        if (Mathf.Abs(steeringInput) > 0.1f && currentSpeed > 10f)
+        if (braked)
         {
-            Vector3 driftForce = -transform.right * steeringInput * driftFactor;
-            rb.AddForce(driftForce, ForceMode.Force);
+            WheelRL.brakeTorque = WheelRR.brakeTorque = maxBrakeTorque * 20;
+            WheelRL.motorTorque = WheelRR.motorTorque = 0;
         }
     }
 
-    private void ApplyBrakes(float brakeTorque)
+    void RotateWheel(Transform wheelTransform, float rpm)
     {
-        WheelCollider[] wheels = { frontLeftWheel, frontRightWheel, rearLeftWheel, rearRightWheel };
-        foreach (var wheel in wheels)
-        {
-            wheel.brakeTorque = brakeTorque;
-        }
+        wheelTransform.Rotate(rpm / 60 * 360 * Time.deltaTime, 0, 0);
     }
 
-    private void UpdateWheels()
+    void UpdateWheelDirection(Transform wheelTransform, float steerAngle)
     {
-        UpdateWheelPos(frontLeftWheel, frontLeftTransform);
-        UpdateWheelPos(frontRightWheel, frontRightTransform);
-        UpdateWheelPos(rearLeftWheel, rearLeftTransform);
-        UpdateWheelPos(rearRightWheel, rearRightTransform);
-    }
-
-    private void UpdateWheelPos(WheelCollider wheelCollider, Transform wheelTransform)
-    {
-        Vector3 position;
-        Quaternion rotation;
-        wheelCollider.GetWorldPose(out position, out rotation);
-        wheelTransform.position = position;
-        wheelTransform.rotation = rotation;
-    }
-
-    private void UpdateCamera()
-    {
-        mainCamera.transform.position = transform.TransformPoint(cameraOffset);
-        mainCamera.transform.LookAt(transform.position);
+        Vector3 temp = wheelTransform.localEulerAngles;
+        temp.y = steerAngle - wheelTransform.localEulerAngles.z;
+        wheelTransform.localEulerAngles = temp;
     }
 }
